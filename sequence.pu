@@ -1,0 +1,103 @@
+@startuml
+title ESP32 電子ペーパー発車時刻表示システム シーケンス図
+
+participant "ESP32 (マイコン)" as ESP32
+participant "電子ペーパー" as Epaper
+participant "WiFiアクセスポイント" as AP
+participant "Webサーバー (ESP32内)" as WebServer
+participant "Preferences (不揮発メモリ)" as Preferences
+participant "NTPサーバー" as NTP
+participant "GitHub Raw (JSON URL)" as GitHub
+
+== 起動時処理 ==
+ESP32 -> Serial: シリアル通信開始
+ESP32 -> Epaper: 電子ペーパー初期化
+ESP32 -> Preferences: 環境設定("wifi-config")開始
+ESP32 -> Preferences: 保存済みSSID/パスワード読み込み
+
+alt 保存済みWiFi設定がある場合
+    ESP32 -> Serial: "Saved WiFi credentials found"
+    ESP32 -> Epaper: "Connecting to WiFi..."表示
+    ESP32 -> AP: WiFi接続試行 (connectToWiFi)
+    AP --> ESP32: 接続結果
+
+    alt WiFi接続成功
+        ESP32 -> Serial: "WiFi connection successful"
+        ESP32 -> NTP: 時刻同期設定 (setupNTP)
+        NTP --> ESP32: 時刻情報提供
+        ESP32 -> Epaper: "Connected" & IPアドレス表示
+        ESP32 -> Serial: "Fetching train schedule data..."
+        ESP32 -> GitHub: 時刻データ取得 (fetchAndParseTrainSchedule)
+        GitHub --> ESP32: JSONデータ返却
+        ESP32 -> ESP32: JSONデータパース (weekdaySchedule, holidayScheduleに格納)
+        ESP32 -> Serial: "Schedule data parsed"
+        ESP32 -> Epaper: 時刻表示更新 (updateDisplay)
+    else WiFi接続失敗
+        ESP32 -> Serial: "Failed to connect with saved WiFi"
+        ESP32 -> ESP32: 設定モード開始 (startConfigMode)
+        ESP32 -> AP: APモード起動 ("TrainDisplay_Setup")
+        ESP32 -> WebServer: Webサーバー起動 (handleRoot, handleSaveなど)
+        ESP32 -> Epaper: "Config Mode" & AP情報表示
+    end
+else 保存済みWiFi設定がない場合
+    ESP32 -> Serial: "No WiFi configuration saved"
+    ESP32 -> ESP32: 設定モード開始 (startConfigMode)
+    ESP32 -> AP: APモード起動 ("TrainDisplay_Setup")
+    ESP32 -> WebServer: Webサーバー起動 (handleRoot, handleSaveなど)
+    ESP32 -> Epaper: "Config Mode" & AP情報表示
+end
+
+== 動作中処理 (ループ) ==
+loop
+    alt 設定モードの場合 (isConfigMode == true)
+        user -> WebServer: WebUIアクセス (PC/スマホから)
+        WebServer -> ESP32: HTTPリクエスト処理 (handleClient)
+        alt WiFiスキャンリクエスト
+            WebServer -> AP: WiFiネットワークスキャン
+            AP --> WebServer: スキャン結果
+            WebServer --> user: ネットワーク一覧表示
+        else 設定保存リクエスト (/save)
+            user -> WebServer: SSID/パスワード送信
+            WebServer -> Preferences: SSID/パスワード保存
+            WebServer --> user: 保存完了メッセージ
+            WebServer -> ESP32: WiFi接続試行 (connectToWiFi)
+            AP --> ESP32: 接続結果
+            alt 接続成功
+                ESP32 -> NTP: 時刻同期設定
+                NTP --> ESP32: 時刻情報提供
+                ESP32 -> ESP32: 設定モード終了 (isConfigMode = false)
+                ESP32 -> GitHub: 時刻データ取得 (fetchAndParseTrainSchedule)
+                GitHub --> ESP32: JSONデータ返却
+                ESP32 -> ESP32: JSONデータパース
+                ESP32 -> Epaper: "Connected"表示 & 時刻表示更新
+            else 接続失敗
+                ESP32 -> Epaper: "Connection Failed"表示
+            end
+        else 設定リセットリクエスト (/reset)
+            WebServer -> Preferences: 設定クリア
+            WebServer --> user: リセット完了メッセージ
+        end
+    else WiFi接続済みの場合 (wifiConnected == true)
+        ESP32 -> ESP32: 60秒待機
+        ESP32 -> NTP: 現在時刻取得
+        NTP --> ESP32: 現在時刻返却
+        ESP32 -> ESP32: 曜日判定 (平日/休日ダイヤ選択)
+        ESP32 -> ESP32: 次の電車時刻検索
+        ESP32 -> Epaper: 表示更新 (updateDisplay)
+    else WiFi接続失敗状態の場合 (wifiConnected == false)
+        ESP32 -> ESP32: 5秒待機
+        ESP32 -> AP: WiFi再接続試行 (connectToWiFi)
+        AP --> ESP32: 接続結果
+        alt 再接続成功
+            ESP32 -> NTP: 時刻同期設定
+            NTP --> ESP32: 時刻情報提供
+            ESP32 -> ESP32: 設定モード終了
+            ESP32 -> GitHub: 時刻データ取得 (fetchAndParseTrainSchedule)
+            GitHub --> ESP32: JSONデータ返却
+            ESP32 -> ESP32: JSONデータパース
+            ESP32 -> Epaper: 表示更新
+        end
+    end
+end
+
+@enduml

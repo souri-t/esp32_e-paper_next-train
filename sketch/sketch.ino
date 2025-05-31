@@ -8,6 +8,8 @@
 #include <Fonts/FreeMonoBold12pt7b.h>
 #include <Fonts/FreeMonoBold18pt7b.h>
 #include <SPI.h>
+#include <HTTPClient.h> // HTTP通信用
+#include <ArduinoJson.h> // JSONパース用
 
 // 電子ペーパー設定（WaveShare e-Paper ESP32 Driver Board + 1.54inch用）
 #define EPD_CS 15
@@ -41,290 +43,85 @@ struct TrainSchedule {
   String trainType;   // 日本語から英語表記に変更
 };
 
-// 最寄駅の発車時刻データ（例：平日ダイヤ）
-TrainSchedule weekdaySchedule[] = {
-  { 5, 7, "Yoyogi Uehara", "Local" },
-  { 5, 27, "Yoyogi Uehara", "Local" },
-  { 5, 40, "Yoyogi Uehara", "Local" },
-  { 5, 46, "Yoyogi Uehara", "Local" },
-  { 6, 0, "Yoyogi Uehara", "Local" },
-  { 6, 7, "Ayase", "Local" },
-  { 6, 14, "Yoyogi Uehara", "Local" },
-  { 6, 20, "Kasumigaseki", "Local" },
-  { 6, 26, "Ayase", "Local" },
-  { 6, 33, "Yoyogi Uehara", "Local" },
-  { 6, 39, "Yoyogi Uehara", "Local" },
-  { 6, 44, "Ayase", "Local" },
-  { 6, 51, "Yoyogi Uehara", "Local" },
-  { 6, 56, "Ayase", "Local" },
-  { 7, 3, "Seijo Gakuen-mae", "Local" },
-  { 7, 14, "Sagami-Ono", "Local" },
-  { 7, 20, "Yoyogi Uehara", "Local" },
-  { 7, 27, "Ayase", "Local" },
-  { 7, 37, "Yoyogi Uehara", "Local" },
-  { 7, 45, "Ayase", "Local" },
-  { 7, 54, "Mukogaoka-Yuen", "Local" },
-  { 8, 1, "Ayase", "Local" },
-  { 8, 12, "Seijo Gakuen-mae", "Local" },
-  { 8, 19, "Ayase", "Local" },
-  { 8, 29, "Yoyogi Uehara", "Local" },
-  { 8, 34, "Ayase", "Local" },
-  { 8, 47, "Ayase", "Local" },
-  { 8, 57, "Yoyogi Uehara", "Local" },
-  { 9, 4, "Ayase", "Local" },
-  { 9, 16, "Yoyogi Uehara", "Local" },
-  { 9, 25, "Ayase", "Local" },
-  { 9, 37, "Ayase", "Local" },
-  { 9, 53, "Ayase", "Local" },
-  { 10, 5, "Yoyogi Uehara", "Local" },
-  { 10, 17, "Ayase", "Local" },
-  { 10, 27, "Yoyogi Uehara", "Local" },
-  { 10, 43, "Ayase", "Local" },
-  { 10, 58, "Yoyogi Uehara", "Local" },
-  { 11, 6, "Ayase", "Local" },
-  { 11, 17, "Yoyogi Uehara", "Local" },
-  { 11, 26, "Ayase", "Local" },
-  { 11, 37, "Yoyogi Uehara", "Local" },
-  { 11, 47, "Yoyogi Uehara", "Local" },
-  { 11, 56, "Ayase", "Local" },
-  { 12, 7, "Yoyogi Uehara", "Local" },
-  { 12, 17, "Yoyogi Uehara", "Local" },
-  { 12, 26, "Ayase", "Local" },
-  { 12, 37, "Yoyogi Uehara", "Local" },
-  { 12, 46, "Ayase", "Local" },
-  { 12, 56, "Ayase", "Local" },
-  { 13, 7, "Yoyogi Uehara", "Local" },
-  { 13, 17, "Yoyogi Uehara", "Local" },
-  { 13, 26, "Ayase", "Local" },
-  { 13, 37, "Yoyogi Uehara", "Local" },
-  { 13, 46, "Ayase", "Local" },
-  { 13, 57, "Yoyogi Uehara", "Local" },
-  { 14, 6, "Ayase", "Local" },
-  { 14, 17, "Yoyogi Uehara", "Local" },
-  { 14, 26, "Ayase", "Local" },
-  { 14, 37, "Yoyogi Uehara", "Local" },
-  { 14, 46, "Ayase", "Local" },
-  { 14, 57, "Yoyogi Uehara", "Local" },
-  { 15, 6, "Ayase", "Local" },
-  { 15, 17, "Yoyogi Uehara", "Local" },
-  { 15, 26, "Ayase", "Local" },
-  { 15, 37, "Yoyogi Uehara", "Local" },
-  { 15, 46, "Ayase", "Local" },
-  { 15, 57, "Ayase", "Local" },
-  { 16, 7, "Yoyogi Uehara", "Local" },
-  { 16, 17, "Ayase", "Local" },
-  { 16, 27, "Yoyogi Uehara", "Local" },
-  { 16, 38, "Ayase", "Local" },
-  { 16, 47, "Yoyogi Uehara", "Local" },
-  { 16, 57, "Yoyogi Uehara", "Local" },
-  { 17, 6, "Yoyogi Uehara", "Local" },
-  { 17, 16, "Ayase", "Local" },
-  { 17, 25, "Yoyogi Uehara", "Local" },
-  { 17, 32, "Mukogaoka-Yuen", "Local" },
-  { 17, 44, "Isehara", "Local" },
-  { 17, 56, "Yoyogi Uehara", "Local" },
-  { 18, 2, "Ayase", "Local" },
-  { 18, 10, "Mukogaoka-Yuen (Semi-Exp)", "Local" },
-  { 18, 15, "Yoyogi Uehara", "Local" },
-  { 18, 24, "Isehara (Exp)", "Local" },
-  { 18, 31, "Mukogaoka-Yuen (Semi-Exp)", "Local" },
-  { 18, 37, "Ayase", "Local" },
-  { 18, 45, "Isehara (Exp)", "Local" },
-  { 18, 53, "Ayase", "Local" },
-  { 18, 57, "Ayase", "Local" },
-  { 19, 5, "Yoyogi Uehara", "Local" },
-  { 19, 10, "Ayase", "Local" },
-  { 19, 16, "Yoyogi Uehara", "Local" },
-  { 19, 24, "Ayase", "Local" },
-  { 19, 30, "Yoyogi Uehara", "Local" },
-  { 19, 37, "Ayase", "Local" },
-  { 19, 44, "Ayase", "Local" },
-  { 19, 54, "Ayase", "Local" },
-  { 20, 7, "Ayase", "Local" },
-  { 20, 19, "Ayase", "Local" },
-  { 20, 26, "Ayase", "Local" },
-  { 20, 34, "Ayase", "Local" },
-  { 20, 46, "Ayase", "Local" },
-  { 20, 58, "Ayase", "Local" },
-  { 21, 6, "Yoyogi Uehara", "Local" },
-  { 21, 15, "Ayase", "Local" },
-  { 21, 28, "Ayase", "Local" },
-  { 21, 35, "Yoyogi Uehara", "Local" },
-  { 21, 44, "Ayase", "Local" },
-  { 21, 55, "Yoyogi Uehara", "Local" },
-  { 22, 6, "Ayase", "Local" },
-  { 22, 22, "Yoyogi Uehara", "Local" },
-  { 22, 30, "Ayase", "Local" },
-  { 22, 43, "Ayase", "Local" },
-  { 22, 55, "Ayase", "Local" },
-  { 23, 7, "Ayase", "Local" },
-  { 23, 22, "Yoyogi Uehara", "Local" },
-  { 23, 36, "Ayase", "Local" },
-  { 23, 50, "Yoyogi Uehara", "Local" },
-  { 24, 8, "Ayase", "Local" }
-};
-const int weekdayScheduleSize = sizeof(weekdaySchedule) / sizeof(TrainSchedule);
+// JSONデータ取得URL
+const char* JSON_URL = "https://raw.githubusercontent.com/souri-t/esp32_e-paper_next-train/refs/heads/develop/sketch/data/timelist.json";
 
-// 最寄駅の発車時刻データ（例：休日ダイヤ）
-TrainSchedule holidaySchedule[] = {
-  { 5, 7, "Yoyogi Uehara", "Local" },
-  { 5, 27, "Yoyogi Uehara", "Local" },
-  { 5, 40, "Yoyogi Uehara", "Local" },
-  { 5, 46, "Yoyogi Uehara", "Local" },
-  { 6, 0, "Yoyogi Uehara", "Local" },
-  { 6, 7, "Ayase", "Local" },
-  { 6, 14, "Yoyogi Uehara", "Local" },
-  { 6, 20, "Kasumigaseki", "Local" },
-  { 6, 26, "Ayase", "Local" },
-  { 6, 33, "Yoyogi Uehara", "Local" },
-  { 6, 39, "Yoyogi Uehara", "Local" },
-  { 6, 44, "Ayase", "Local" },
-  { 6, 51, "Yoyogi Uehara", "Local" },
-  { 6, 56, "Ayase", "Local" },
-  { 7, 3, "Seijo Gakuen-mae", "Local" },
-  { 7, 14, "Sagami-Ono", "Local" },
-  { 7, 20, "Yoyogi Uehara", "Local" },
-  { 7, 27, "Ayase", "Local" },
-  { 7, 37, "Yoyogi Uehara", "Local" },
-  { 7, 45, "Ayase", "Local" },
-  { 7, 54, "Mukogaoka-Yuen", "Local" },
-  { 8, 1, "Ayase", "Local" },
-  { 8, 12, "Seijo Gakuen-mae", "Local" },
-  { 8, 19, "Ayase", "Local" },
-  { 8, 29, "Yoyogi Uehara", "Local" },
-  { 8, 34, "Ayase", "Local" },
-  { 8, 47, "Ayase", "Local" },
-  { 8, 57, "Yoyogi Uehara", "Local" },
-  { 9, 4, "Ayase", "Local" },
-  { 9, 16, "Yoyogi Uehara", "Local" },
-  { 9, 25, "Ayase", "Local" },
-  { 9, 37, "Ayase", "Local" },
-  { 9, 53, "Ayase", "Local" },
-  { 10, 5, "Yoyogi Uehara", "Local" },
-  { 10, 17, "Ayase", "Local" },
-  { 10, 27, "Yoyogi Uehara", "Local" },
-  { 10, 43, "Ayase", "Local" },
-  { 10, 58, "Yoyogi Uehara", "Local" },
-  { 11, 6, "Ayase", "Local" },
-  { 11, 17, "Yoyogi Uehara", "Local" },
-  { 11, 26, "Ayase", "Local" },
-  { 11, 37, "Yoyogi Uehara", "Local" },
-  { 11, 47, "Yoyogi Uehara", "Local" },
-  { 11, 56, "Ayase", "Local" },
-  { 12, 7, "Yoyogi Uehara", "Local" },
-  { 12, 17, "Yoyogi Uehara", "Local" },
-  { 12, 26, "Ayase", "Local" },
-  { 12, 37, "Yoyogi Uehara", "Local" },
-  { 12, 46, "Ayase", "Local" },
-  { 12, 56, "Ayase", "Local" },
-  { 13, 7, "Yoyogi Uehara", "Local" },
-  { 13, 17, "Yoyogi Uehara", "Local" },
-  { 13, 26, "Ayase", "Local" },
-  { 13, 37, "Yoyogi Uehara", "Local" },
-  { 13, 46, "Ayase", "Local" },
-  { 13, 57, "Yoyogi Uehara", "Local" },
-  { 14, 6, "Ayase", "Local" },
-  { 14, 17, "Yoyogi Uehara", "Local" },
-  { 14, 26, "Ayase", "Local" },
-  { 14, 37, "Yoyogi Uehara", "Local" },
-  { 14, 46, "Ayase", "Local" },
-  { 14, 57, "Yoyogi Uehara", "Local" },
-  { 15, 6, "Ayase", "Local" },
-  { 15, 17, "Yoyogi Uehara", "Local" },
-  { 15, 26, "Ayase", "Local" },
-  { 15, 37, "Yoyogi Uehara", "Local" },
-  { 15, 46, "Ayase", "Local" },
-  { 15, 57, "Ayase", "Local" },
-  { 16, 7, "Yoyogi Uehara", "Local" },
-  { 16, 17, "Ayase", "Local" },
-  { 16, 27, "Yoyogi Uehara", "Local" },
-  { 16, 38, "Ayase", "Local" },
-  { 16, 47, "Yoyogi Uehara", "Local" },
-  { 16, 57, "Yoyogi Uehara", "Local" },
-  { 17, 6, "Yoyogi Uehara", "Local" },
-  { 17, 16, "Ayase", "Local" },
-  { 17, 25, "Yoyogi Uehara", "Local" },
-  { 17, 32, "Mukogaoka-Yuen", "Local" },
-  { 17, 44, "Isehara", "Local" },
-  { 17, 56, "Yoyogi Uehara", "Local" },
-  { 18, 2, "Ayase", "Local" },
-  { 18, 10, "Mukogaoka-Yuen (Semi-Exp)", "Local" },
-  { 18, 15, "Yoyogi Uehara", "Local" },
-  { 18, 24, "Isehara (Exp)", "Local" },
-  { 18, 31, "Mukogaoka-Yuen (Semi-Exp)", "Local" },
-  { 18, 37, "Ayase", "Local" },
-  { 18, 45, "Isehara (Exp)", "Local" },
-  { 18, 53, "Ayase", "Local" },
-  { 18, 57, "Ayase", "Local" },
-  { 19, 5, "Yoyogi Uehara", "Local" },
-  { 19, 10, "Ayase", "Local" },
-  { 19, 16, "Yoyogi Uehara", "Local" },
-  { 19, 24, "Ayase", "Local" },
-  { 19, 30, "Yoyogi Uehara", "Local" },
-  { 19, 37, "Ayase", "Local" },
-  { 19, 44, "Ayase", "Local" },
-  { 19, 54, "Ayase", "Local" },
-  { 20, 7, "Ayase", "Local" },
-  { 20, 19, "Ayase", "Local" },
-  { 20, 26, "Ayase", "Local" },
-  { 20, 34, "Ayase", "Local" },
-  { 20, 46, "Ayase", "Local" },
-  { 20, 58, "Ayase", "Local" },
-  { 21, 6, "Yoyogi Uehara", "Local" },
-  { 21, 15, "Ayase", "Local" },
-  { 21, 28, "Ayase", "Local" },
-  { 21, 35, "Yoyogi Uehara", "Local" },
-  { 21, 44, "Ayase", "Local" },
-  { 21, 55, "Yoyogi Uehara", "Local" },
-  { 22, 6, "Ayase", "Local" },
-  { 22, 22, "Yoyogi Uehara", "Local" },
-  { 22, 30, "Ayase", "Local" },
-  { 22, 43, "Ayase", "Local" },
-  { 22, 55, "Ayase", "Local" },
-  { 23, 7, "Ayase", "Local" },
-  { 23, 22, "Yoyogi Uehara", "Local" },
-  { 23, 36, "Ayase", "Local" },
-  { 23, 50, "Yoyogi Uehara", "Local" },
-  { 24, 8, "Ayase", "Local" }
-};
-const int holidayScheduleSize = sizeof(holidaySchedule) / sizeof(TrainSchedule);
+// 発車時刻データ（動的に割り当てるためポインタに）
+TrainSchedule* weekdaySchedule = nullptr;
+int weekdayScheduleSize = 0;
+TrainSchedule* holidaySchedule = nullptr;
+int holidayScheduleSize = 0;
 
 // 現在のダイヤ種別
 TrainSchedule* currentSchedule;
 int currentScheduleSize;
 
+// プロトタイプ宣言
+void displayMessage(const char* title, const char* message);
+bool connectToWiFi(String ssid, String password);
+void setupNTP();
+void updateDisplay();
+void selectSchedule(struct tm timeinfo);
+const char* getWeekdayString(int wday);
+TrainSchedule findNextTrain(int currentHour, int currentMinute);
+int calculateMinutesUntil(int currentHour, int currentMinute, int targetHour, int targetMinute);
+void startConfigMode();
+void setupWebServer();
+void handleRoot();
+void handleScan();
+void handleSave();
+void handleReset();
+bool fetchAndParseTrainSchedule();
+
 void setup() {
   Serial.begin(115200);
-  Serial.println("Train Schedule Display System Start"); // メッセージを英語に変更
+  Serial.println("Train Schedule Display System Start");
+
   // SPI設定（Driver Board用）
   SPI.begin(EPD_SCK, EPD_MISO, EPD_MOSI, EPD_CS);
+
   // 電子ペーパー初期化
-  Serial.println("Initializing e-Paper display..."); // メッセージを英語に変更
+  Serial.println("Initializing e-Paper display...");
   display.init(115200, true, 2, false);
   display.setRotation(0);
   display.setTextColor(GxEPD_BLACK);
+
   // Preferences初期化
   preferences.begin("wifi-config", false);
+
   // 保存されたWiFi設定を読み込み
   savedSSID = preferences.getString("ssid", "");
   savedPassword = preferences.getString("password", "");
+
   if (savedSSID.length() > 0) {
-    Serial.println("Attempting to connect with saved WiFi credentials"); // メッセージを英語に変更
-    displayMessage("Connecting to WiFi", savedSSID.c_str()); // 表示メッセージを英語に変更
+    Serial.println("Attempting to connect with saved WiFi credentials");
+    displayMessage("Connecting to WiFi", savedSSID.c_str());
+
     // 保存されたWiFi設定で接続試行
     wifiConnected = connectToWiFi(savedSSID, savedPassword);
+
     if (wifiConnected) {
-      Serial.println("WiFi connection successful"); // メッセージを英語に変更
+      Serial.println("WiFi connection successful");
       setupNTP();
-      displayMessage("Connected", WiFi.localIP().toString().c_str()); // 表示メッセージを英語に変更
+      displayMessage("Connected", WiFi.localIP().toString().c_str());
       delay(2000);
-      updateDisplay();
+
+      // 電車時刻データを取得
+      if (fetchAndParseTrainSchedule()) {
+        Serial.println("Train schedule data fetched and parsed successfully.");
+        updateDisplay();
+      } else {
+        Serial.println("Failed to fetch or parse train schedule data.");
+        displayMessage("Error", "Failed to get schedule");
+        delay(3000);
+        startConfigMode(); // 失敗した場合は設定モードへ
+      }
     } else {
-      Serial.println("Failed to connect with saved WiFi credentials"); // メッセージを英語に変更
+      Serial.println("Failed to connect with saved WiFi credentials");
       startConfigMode();
     }
   } else {
-    Serial.println("No WiFi configuration saved"); // メッセージを英語に変更
+    Serial.println("No WiFi configuration saved");
     startConfigMode();
   }
 }
@@ -346,6 +143,16 @@ void loop() {
       if (wifiConnected) {
         setupNTP();
         isConfigMode = false;
+        // 電車時刻データを再取得
+        if (fetchAndParseTrainSchedule()) {
+          Serial.println("Train schedule data re-fetched and parsed successfully.");
+          updateDisplay();
+        } else {
+          Serial.println("Failed to re-fetch or parse train schedule data.");
+          displayMessage("Error", "Failed to get schedule");
+          delay(3000);
+          startConfigMode();
+        }
       }
     }
   }
@@ -362,29 +169,29 @@ bool connectToWiFi(String ssid, String password) {
   }
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println();
-    Serial.print("WiFi Connected. IP: "); // メッセージを英語に変更
+    Serial.print("WiFi Connected. IP: ");
     Serial.println(WiFi.localIP());
     return true;
   } else {
-    Serial.println("WiFi connection timeout"); // メッセージを英語に変更
+    Serial.println("WiFi connection timeout");
     return false;
   }
 }
 
 void startConfigMode() {
-  Serial.println("Starting configuration mode"); // メッセージを英語に変更
+  Serial.println("Starting configuration mode");
   isConfigMode = true;
   // アクセスポイントモードで起動
   WiFi.mode(WIFI_AP);
   WiFi.softAP("TrainDisplay_Setup", "12345678");
   IPAddress IP = WiFi.softAPIP();
-  Serial.print("Configuration AP started. IP: "); // メッセージを英語に変更
+  Serial.print("Configuration AP started. IP: ");
   Serial.println(IP);
-  displayMessage("Config Mode", "TrainDisplay_Setup"); // 表示メッセージを英語に変更
+  displayMessage("Config Mode", "TrainDisplay_Setup");
   // Webサーバー設定
   setupWebServer();
   server.begin();
-  Serial.println("Web server started"); // メッセージを英語に変更
+  Serial.println("Web server started");
 }
 
 void setupWebServer() {
@@ -403,7 +210,7 @@ void handleRoot() {
   String html = "<!DOCTYPE html><html><head>";
   html += "<meta charset='UTF-8'>";
   html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
-  html += "<title>Train Display WiFi Setup</title>"; // タイトルを英語に変更
+  html += "<title>Train Display WiFi Setup</title>";
   html += "<style>";
   html += "body{font-family:Arial,sans-serif;margin:20px;background:#f0f0f0}";
   html += ".container{max-width:400px;margin:0 auto;background:white;padding:20px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.1)}";
@@ -419,23 +226,23 @@ void handleRoot() {
   html += ".network:hover{background:#e9e9e9}";
   html += "</style></head><body>";
   html += "<div class='container'>";
-  html += "<h1>🚃 Train Display<br>WiFi Setup</h1>"; // タイトルを英語に変更
+  html += "<h1>🚃 Train Display<br>WiFi Setup</h1>";
   html += "<form method='POST' action='/save'>";
-  html += "<label>WiFi Network:</label>"; // ラベルを英語に変更
+  html += "<label>WiFi Network:</label>";
   html += "<select name='ssid' id='ssid'>";
-  html += "<option value=''>Select Network</option>"; // オプションを英語に変更
+  html += "<option value=''>Select Network</option>";
   html += "</select>";
-  html += "<input type='text' name='custom_ssid' placeholder='Or enter manually' id='custom_ssid'>"; // プレースホルダーを英語に変更
-  html += "<input type='password' name='password' placeholder='Password' required>"; // プレースホルダーを英語に変更
-  html += "<button type='submit'>Save & Connect</button>"; // ボタンを英語に変更
+  html += "<input type='text' name='custom_ssid' placeholder='Or enter manually' id='custom_ssid'>";
+  html += "<input type='password' name='password' placeholder='Password' required>";
+  html += "<button type='submit'>Save & Connect</button>";
   html += "</form>";
-  html += "<button onclick='scanNetworks()' class='scan-btn'>Scan WiFi</button>"; // ボタンを英語に変更
-  html += "<button onclick='resetConfig()' class='reset-btn'>Reset Settings</button>"; // ボタンを英語に変更
+  html += "<button onclick='scanNetworks()' class='scan-btn'>Scan WiFi</button>";
+  html += "<button onclick='resetConfig()' class='reset-btn'>Reset Settings</button>";
   html += "<div id='networks'></div>";
   html += "</div>";
   html += "<script>";
   html += "function scanNetworks(){";
-  html += "document.getElementById('networks').innerHTML='<p>Scanning...</p>';"; // メッセージを英語に変更
+  html += "document.getElementById('networks').innerHTML='<p>Scanning...</p>';";
   html += "fetch('/scan').then(r=>r.text()).then(data=>{";
   html += "document.getElementById('networks').innerHTML=data;";
   html += "});}";
@@ -443,20 +250,20 @@ void handleRoot() {
   html += "document.getElementById('ssid').value=ssid;";
   html += "document.getElementById('custom_ssid').value='';}";
   html += "function resetConfig(){";
-  html += "if(confirm('Are you sure you want to reset settings?')){"; // 確認メッセージを英語に変更
+  html += "if(confirm('Are you sure you want to reset settings?')){";
   html += "fetch('/reset').then(()=>location.reload());}}";
   html += "</script></body></html>";
   server.send(200, "text/html", html);
 }
 
 void handleScan() {
-  Serial.println("Starting WiFi scan"); // メッセージを英語に変更
+  Serial.println("Starting WiFi scan");
   int n = WiFi.scanNetworks();
   String networks = "";
   if (n == 0) {
-    networks = "<p>No networks found</p>"; // メッセージを英語に変更
+    networks = "<p>No networks found</p>";
   } else {
-    networks = "<h3>Detected Networks:</h3>"; // メッセージを英語に変更
+    networks = "<h3>Detected Networks:</h3>";
     for (int i = 0; i < n; i++) {
       String ssid = WiFi.SSID(i);
       int rssi = WiFi.RSSI(i);
@@ -477,7 +284,7 @@ void handleSave() {
   if (customSSID.length() > 0) {
     ssid = customSSID;
   }
-  Serial.println("Saving WiFi settings: " + ssid); // メッセージを英語に変更
+  Serial.println("Saving WiFi settings: " + ssid);
   // 設定を保存
   preferences.putString("ssid", ssid);
   preferences.putString("password", password);
@@ -485,9 +292,9 @@ void handleSave() {
   html += "<meta http-equiv='refresh' content='5;url=/'>";
   html += "</head><body>";
   html += "<div style='text-align:center;margin:50px;'>";
-  html += "<h2>Settings saved</h2>"; // メッセージを英語に変更
-  html += "<p>Connecting to " + ssid + "...</p>"; // メッセージを英語に変更
-  html += "<p>Redirecting in 5 seconds</p>"; // メッセージを英語に変更
+  html += "<h2>Settings saved</h2>";
+  html += "<p>Connecting to " + ssid + "...</p>";
+  html += "<p>Redirecting in 5 seconds</p>";
   html += "</div></body></html>";
   server.send(200, "text/html", html);
   delay(1000);
@@ -498,24 +305,33 @@ void handleSave() {
     wifiConnected = true;
     isConfigMode = false;
     setupNTP();
-    displayMessage("Connected", WiFi.localIP().toString().c_str()); // 表示メッセージを英語に変更
+    displayMessage("Connected", WiFi.localIP().toString().c_str());
     delay(2000);
-    updateDisplay();
+    // 電車時刻データを取得
+    if (fetchAndParseTrainSchedule()) {
+      Serial.println("Train schedule data fetched and parsed successfully.");
+      updateDisplay();
+    } else {
+      Serial.println("Failed to fetch or parse train schedule data.");
+      displayMessage("Error", "Failed to get schedule");
+      delay(3000);
+      startConfigMode();
+    }
   } else {
-    displayMessage("Connection Failed", "Check settings"); // 表示メッセージを英語に変更
+    displayMessage("Connection Failed", "Check settings");
   }
 }
 
 void handleReset() {
-  Serial.println("Resetting settings"); // メッセージを英語に変更
+  Serial.println("Resetting settings");
   preferences.clear();
   savedSSID = "";
   savedPassword = "";
-  server.send(200, "text/html", "<!DOCTYPE html><html><head><meta charset='UTF-8'></head><body><h2>Settings have been reset</h2><a href='/'>Back</a></body></html>"); // メッセージを英語に変更
+  server.send(200, "text/html", "<!DOCTYPE html><html><head><meta charset='UTF-8'></head><body><h2>Settings have been reset</h2><a href='/'>Back</a></body></html>");
 }
 
 void setupNTP() {
-  Serial.println("Synchronizing time with NTP..."); // メッセージを英語に変更
+  Serial.println("Synchronizing time with NTP...");
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   struct tm timeinfo;
   int attempts = 0;
@@ -524,9 +340,9 @@ void setupNTP() {
     attempts++;
   }
   if (attempts < 10) {
-    Serial.println("Time synchronization complete"); // メッセージを英語に変更
+    Serial.println("Time synchronization complete");
   } else {
-    Serial.println("Time synchronization failed"); // メッセージを英語に変更
+    Serial.println("Time synchronization failed");
   }
 }
 
@@ -554,22 +370,108 @@ void displayMessage(const char* title, const char* message) {
   } while (display.nextPage());
 }
 
+// JSONから発車時刻を取得し、パースする関数
+bool fetchAndParseTrainSchedule() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi not connected. Cannot fetch train schedule.");
+    return false;
+  }
+
+  HTTPClient http;
+  http.begin(JSON_URL);
+  int httpCode = http.GET();
+
+  if (httpCode > 0) {
+    if (httpCode == HTTP_CODE_OK) {
+      String payload = http.getString();
+      Serial.println("Received train schedule JSON:");
+      Serial.println(payload);
+
+      DynamicJsonDocument doc(4096); // Adjust size as needed
+      DeserializationError error = deserializeJson(doc, payload);
+
+      if (error) {
+        Serial.print(F("deserializeJson() failed: "));
+        Serial.println(error.f_str());
+        return false;
+      }
+
+      // 既存のデータを解放
+      if (weekdaySchedule != nullptr) {
+        delete[] weekdaySchedule;
+        weekdaySchedule = nullptr;
+      }
+      if (holidaySchedule != nullptr) {
+        delete[] holidaySchedule;
+        holidaySchedule = nullptr;
+      }
+
+      // 平日ダイヤのパース
+      JsonArray weekdayArray = doc["weekday"].as<JsonArray>();
+      weekdayScheduleSize = weekdayArray.size();
+      if (weekdayScheduleSize > 0) {
+        weekdaySchedule = new TrainSchedule[weekdayScheduleSize];
+        for (int i = 0; i < weekdayScheduleSize; i++) {
+          weekdaySchedule[i].hour = weekdayArray[i]["hour"];
+          weekdaySchedule[i].minute = weekdayArray[i]["minute"];
+          weekdaySchedule[i].destination = weekdayArray[i]["destination"].as<String>();
+          weekdaySchedule[i].trainType = weekdayArray[i]["trainType"].as<String>();
+        }
+        Serial.printf("Parsed %d weekday schedules.\n", weekdayScheduleSize);
+      } else {
+        Serial.println("No weekday schedules found in JSON.");
+      }
+
+      // 休日ダイヤのパース
+      JsonArray holidayArray = doc["holiday"].as<JsonArray>();
+      holidayScheduleSize = holidayArray.size();
+      if (holidayScheduleSize > 0) {
+        holidaySchedule = new TrainSchedule[holidayScheduleSize];
+        for (int i = 0; i < holidayScheduleSize; i++) {
+          holidaySchedule[i].hour = holidayArray[i]["hour"];
+          holidaySchedule[i].minute = holidayArray[i]["minute"];
+          holidaySchedule[i].destination = holidayArray[i]["destination"].as<String>();
+          holidaySchedule[i].trainType = holidayArray[i]["trainType"].as<String>();
+        }
+        Serial.printf("Parsed %d holiday schedules.\n", holidayScheduleSize);
+      } else {
+        Serial.println("No holiday schedules found in JSON.");
+      }
+      return true;
+    }
+  } else {
+    Serial.printf("HTTP GET failed, error: %s\n", http.errorToString(httpCode).c_str());
+  }
+  http.end();
+  return false;
+}
+
 void updateDisplay() {
   if (!wifiConnected) return;
   struct tm timeinfo;
   if (!getLocalTime(&timeinfo)) {
-    Serial.println("Error getting time"); // メッセージを英語に変更
+    Serial.println("Error getting time");
     return;
   }
 
   // 曜日を判定してダイヤを選択
   selectSchedule(timeinfo);
+
+  // スケジュールデータが取得できていない場合は表示をスキップ
+  if (currentSchedule == nullptr || currentScheduleSize == 0) {
+    Serial.println("Train schedule data not available for display.");
+    displayMessage("Error", "No schedule data");
+    return;
+  }
+
   int currentHour = timeinfo.tm_hour;
   int currentMinute = timeinfo.tm_min;
+
   // 次の発車時刻を検索
   TrainSchedule nextTrain = findNextTrain(currentHour, currentMinute);
   // 現在時刻までの分数を計算
   int minutesUntilNext = calculateMinutesUntil(currentHour, currentMinute, nextTrain.hour, nextTrain.minute);
+
   // 画面クリア
   display.setFullWindow();
   display.firstPage();
@@ -586,10 +488,11 @@ void updateDisplay() {
     display.print(currentTimeStr);
     // 線を描画
     display.drawLine(0, 25, display.width(), 25, GxEPD_BLACK);
+
     // 次の電車情報（メイン表示）
     display.setFont(&FreeMonoBold12pt7b);
     display.setCursor(5, 50);
-    display.print("Next Train"); // "次の電車" を英語に変更
+    display.print("Next Train");
     // 発車時刻を大きく表示
     display.setFont(&FreeMonoBold18pt7b);
     display.setCursor(5, 80);
@@ -605,25 +508,27 @@ void updateDisplay() {
       destInfo = destInfo.substring(0, 17) + "..";
     }
     display.print(destInfo);
+
     // 残り時間表示（強調）
     display.setFont(&FreeMonoBold12pt7b);
     display.setCursor(5, 130);
     if (minutesUntilNext == 0) {
-      display.print("Departing Soon"); // "まもなく" を英語に変更
+      display.print("Departing Soon");
     } else if (minutesUntilNext == 1) {
-      display.print("1 min Left"); // "あと1分" を英語に変更
+      display.print("1 min Left");
     } else {
       char minutesStr[15];
-      sprintf(minutesStr, "%d min Left", minutesUntilNext); // "あと%d分" または "%d分後" を英語に変更
+      sprintf(minutesStr, "%d min Left", minutesUntilNext);
       display.print(minutesStr);
     }
     // 線を描画
     display.drawLine(0, 140, display.width(), 140, GxEPD_BLACK);
+
     // その次の電車情報（簡潔に）
     TrainSchedule nextNextTrain = findNextTrain(nextTrain.hour, nextTrain.minute + 1);
     display.setFont(&FreeMonoBold9pt7b);
     display.setCursor(5, 160);
-    display.print("Next after"); // "その次" を英語に変更
+    display.print("Next after");
     display.setCursor(5, 180);
     char nextNextStr[25];
     sprintf(nextNextStr, "%02d:%02d %s",
@@ -636,21 +541,21 @@ void updateDisplay() {
     }
     display.print(nextNextDisplay);
   } while (display.nextPage());
-  Serial.printf("Display updated: %02d:%02d, Next train: %02d:%02d (%d min left)\n", // メッセージを英語に変更
+  Serial.printf("Display updated: %02d:%02d, Next train: %02d:%02d (%d min left)\n",
                 currentHour, currentMinute, nextTrain.hour, nextTrain.minute, minutesUntilNext);
 }
 
 // 曜日によってダイヤを切り替える関数（土日のみ休日ダイヤ）
 void selectSchedule(struct tm timeinfo) {
   // tm_wday: 日曜日=0, 月曜日=1, ..., 土曜日=6
-  if (timeinfo.tm_wday == 0 || timeinfo.tm_wday == 6) {  // 日曜日または土曜日
+  if (timeinfo.tm_wday == 0 || timeinfo.tm_wday == 6) {   // 日曜日または土曜日
     currentSchedule = holidaySchedule;
     currentScheduleSize = holidayScheduleSize;
-    Serial.println("Applying holiday schedule"); // メッセージを英語に変更
+    Serial.println("Applying holiday schedule");
   } else {
     currentSchedule = weekdaySchedule;
     currentScheduleSize = weekdayScheduleSize;
-    Serial.println("Applying weekday schedule"); // メッセージを英語に変更
+    Serial.println("Applying weekday schedule");
   }
 }
 
